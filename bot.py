@@ -5,24 +5,24 @@ import asyncio
 import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+import dotenv
+
+dotenv.load_dotenv()
 
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-
 scheduler = AsyncIOScheduler()
 
-# Estado do jogo
 players = []
 roles = {}
 game_started = False
 channel_game = None
 witch_potions = {"heal": True, "kill": True}
-player_actions = {}  # Guarda se jogador agiu na fase atual
+player_actions = {}
 
-# Papéis possíveis
 possible_roles = [
     "assassino sombrio",
     "oráculo da luz",
@@ -30,12 +30,9 @@ possible_roles = [
     "civil"
 ]
 
-# Tempos em segundos
-TIME_STANDBY_INTERVAL = 300  # 5 minutos para mensagem standby
-TIME_ACTION = 60  # 60 segundos para realizar ação na fase noturna
-TIME_GAME_RESTART = 120  # 2 minutos após fim para reiniciar
-
-# ------- FUNÇÕES AUXILIARES --------
+TIME_STANDBY_INTERVAL = 300
+TIME_ACTION = 60
+TIME_GAME_RESTART = 120
 
 def assign_roles():
     import random
@@ -43,7 +40,6 @@ def assign_roles():
     roles.clear()
     shuffled = players[:]
     random.shuffle(shuffled)
-    # Simplificação: 1 assassino, 1 oráculo, 1 alquimista, resto civis
     for i, p in enumerate(shuffled):
         if i == 0:
             roles[p] = "assassino sombrio"
@@ -70,7 +66,6 @@ async def checar_vitoria():
     elif len(assassinos) >= len(civis):
         await channel_game.send("☠️ **Assassinos venceram!** Havrenna mergulha na escuridão!")
         await finalizar_jogo()
-    # Caso contrário, continua
 
 async def finalizar_jogo():
     global players, roles, game_started, witch_potions
@@ -84,8 +79,6 @@ async def finalizar_jogo():
 
 async def reset_game():
     await channel_game.send("🔄 Novo desafio começará em breve! Use `!entrar` para juntar-se.")
-
-# --------- AGENDAMENTOS E TIMEOUTS -----------
 
 async def standby_message():
     global game_started, channel_game
@@ -107,8 +100,6 @@ async def alchemist_timeout(player):
     if not player_acted(player):
         await player.send("⏰ Tempo esgotado para usar a Alquimista Arcana.")
 
-# ------------ FASES DO JOGO -------------------
-
 async def begin_night_phase():
     reset_player_actions()
     await channel_game.send("🌙 **Noite cai sobre Havrenna...** Heróis, preparem-se para suas ações.")
@@ -126,15 +117,16 @@ async def assassin_turn():
             await a.send("🗡️ Você é o Assassino Sombrio. Escolha alguém para matar com `!matar @usuario` (tempo: 60s).")
         except:
             await channel_game.send(f"⚠️ Não consegui enviar DM para {a.display_name}.")
-        scheduler.add_job(asyncio.create_task, args=[assassin_timeout(a)], trigger='date', run_date=datetime.datetime.now() + datetime.timedelta(seconds=TIME_ACTION))
+        scheduler.add_job(
+            lambda a=a: asyncio.create_task(assassin_timeout(a)),
+            'date',
+            run_date=datetime.datetime.now() + datetime.timedelta(seconds=TIME_ACTION)
+        )
 
 async def begin_day_phase():
     reset_player_actions()
     await channel_game.send("☀️ **O dia amanhece em Havrenna.** É hora de discutir e votar!")
     await channel_game.send("Use `!votar @usuario` para votar em quem será banido.")
-    # Pode adicionar timeout para votação
-
-# --------- COMANDOS DO BOT --------------
 
 @bot.command(name="entrar")
 async def entrar(ctx):
@@ -204,7 +196,6 @@ async def matar(ctx, target: discord.Member):
 
 @bot.command(name="votar")
 async def votar(ctx, target: discord.Member):
-    # Aqui você pode adicionar lógica para contar votos, sistema mais complexo, etc.
     await ctx.send(f"{ctx.author.display_name} votou para banir {target.display_name}. (Sistema de votos não implementado ainda)")
 
 @bot.command(name="usar_pocao")
@@ -218,27 +209,17 @@ async def usar_pocao(ctx, tipo: str, target: discord.Member = None):
     if not witch_potions[tipo.lower()]:
         await ctx.send(f"⚠️ A poção `{tipo}` já foi usada.")
         return
-    # Exemplo simplificado
     witch_potions[tipo.lower()] = False
     player_actions[ctx.author.id] = True
     await ctx.send(f"✨ {ctx.author.display_name} usou a poção `{tipo}`!")
-    # Exemplo efeito da poção (a implementar)
-
-# EVENTO ON READY
 
 @bot.event
 async def on_ready():
     global channel_game
     print(f"🤖 Heroes of Havrenna online como {bot.user}")
     scheduler.start()
-    # Agendar mensagem standby a cada 5 minutos
     scheduler.add_job(lambda: asyncio.create_task(standby_message()), IntervalTrigger(seconds=TIME_STANDBY_INTERVAL))
-    # (Se quiser, pode restaurar estado de jogo aqui)
-
-# RODA O BOT
 
 if __name__ == "__main__":
-    import dotenv
-    dotenv.load_dotenv()
     TOKEN = os.getenv("DISCORD_TOKEN")
     bot.run(TOKEN)
